@@ -101,7 +101,7 @@ pub const Option = union(enum) {
 
 /// Collection of DHCP options.
 pub const Options = struct {
-    items: std.ArrayList(Option) = .empty,
+    items: std.ArrayListUnmanaged(Option) = .empty,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) Options {
@@ -459,7 +459,7 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
         },
         .domain_search => {
             // RFC 1035 compressed domain name decoding
-            var names: std.ArrayList([]const u8) = .empty;
+            var names: std.ArrayListUnmanaged([]const u8) = .empty;
             errdefer {
                 for (names.items) |name| allocator.free(name);
                 names.deinit(allocator);
