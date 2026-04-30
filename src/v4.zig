@@ -122,7 +122,7 @@ pub const Options = struct {
     }
 
     /// Get an option by tag, returns the payload or null if not present.
-    pub fn get(self: *const Options, comptime tag: std.meta.Tag(Option)) ?std.meta.TagPayload(Option, tag) {
+    pub fn get(self: *const Options, comptime tag: std.meta.Tag(Option)) ?@FieldType(Option, @tagName(tag)) {
         for (self.items.items) |item| {
             if (item == tag) {
                 return @field(item, @tagName(tag));
