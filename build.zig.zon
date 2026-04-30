@@ -3,7 +3,12 @@
     .version = "0.1.0",
     .fingerprint = 0x817c6dd103e0596d,
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .zest = .{
+            .url = "git+https://github.com/cloudboss/zest#cd7532a068d1e8ca87df0dee9ea9c191d24bd41a",
+            .hash = "zest-0.1.0-2zk2nt1EAABzZoN2yRNsVSyQ-BQpMlsZu8hMvHMjPE2m",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
