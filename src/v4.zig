@@ -43,6 +43,7 @@ pub const OptionCode = enum(u8) {
     subnet_mask = 1,
     router = 3,
     domain_name_server = 6,
+    host_name = 12,
     domain_name = 15,
     requested_ip_address = 50,
     message_type = 53,
@@ -68,6 +69,7 @@ pub const Option = union(enum) {
     subnet_mask: Ipv4Addr,
     router: []const Ipv4Addr,
     domain_name_server: []const Ipv4Addr,
+    host_name: []const u8,
     domain_name: []const u8,
     requested_ip_address: Ipv4Addr,
     message_type: MessageType,
@@ -85,6 +87,7 @@ pub const Option = union(enum) {
         switch (self.*) {
             .router => |addrs| allocator.free(addrs),
             .domain_name_server => |addrs| allocator.free(addrs),
+            .host_name => |name| allocator.free(name),
             .domain_name => |name| allocator.free(name),
             .parameter_request_list => |list| freeOptionCodes(allocator, list),
             .domain_search => |names| {
@@ -361,6 +364,14 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
             }
             p += 2 + len;
         },
+        .host_name => |name| {
+            const len: u8 = @intCast(name.len);
+            if (p + 2 + len > buf.len) return error.BufferTooSmall;
+            buf[p] = @intFromEnum(OptionCode.host_name);
+            buf[p + 1] = len;
+            @memcpy(buf[p + 2 .. p + 2 + len], name);
+            p += 2 + len;
+        },
         .domain_name => |name| {
             const len: u8 = @intCast(name.len);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
@@ -433,6 +444,10 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
                 addrs[i] = data[i * 4 ..][0..4].*;
             }
             return .{ .domain_name_server = addrs };
+        },
+        .host_name => {
+            const name = try allocator.dupe(u8, data);
+            return .{ .host_name = name };
         },
         .domain_name => {
             const name = try allocator.dupe(u8, data);
@@ -513,6 +528,7 @@ pub fn createDiscover(allocator: Allocator, xid: u32, mac: [6]u8) !Message {
         .subnet_mask,
         .router,
         .domain_name_server,
+        .host_name,
         .domain_name,
         .domain_search,
     });
@@ -867,6 +883,29 @@ test "domain name option" {
     defer msg.deinit();
 
     try std.testing.expectEqualStrings("example.com", msg.options.get(.domain_name).?);
+}
+
+test "host name option" {
+    const allocator = std.testing.allocator;
+
+    var buf: [300]u8 = .{0} ** 300;
+    buf[0] = 2;
+    buf[1] = 1;
+    buf[2] = 6;
+    @memcpy(buf[236..240], &MAGIC_COOKIE);
+
+    var pos: usize = 240;
+    const host = "ip-10-0-1-23";
+    buf[pos] = 12; // host name
+    buf[pos + 1] = @intCast(host.len);
+    @memcpy(buf[pos + 2 .. pos + 2 + host.len], host);
+    pos += 2 + host.len;
+    buf[pos] = 255;
+
+    var msg = try Message.decode(allocator, buf[0 .. pos + 1]);
+    defer msg.deinit();
+
+    try std.testing.expectEqualStrings("ip-10-0-1-23", msg.options.get(.host_name).?);
 }
 
 test "minimum valid packet" {
