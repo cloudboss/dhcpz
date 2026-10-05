@@ -4,7 +4,7 @@ A DHCP protocol library for Zig.
 
 ## Project Overview
 
-- **Language**: Zig 0.16.0
+- **Language**: Zig 0.17.0
 - **Purpose**: DHCP message encoding/decoding
 
 ## Build Commands

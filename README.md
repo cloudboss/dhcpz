@@ -2,6 +2,8 @@
 
 A DHCP protocol library for Zig.
 
+Requires Zig 0.17.0 or later.
+
 ## Installation
 
 ```bash
@@ -24,9 +26,9 @@ const std = @import("std");
 const v4 = @import("dhcpz").v4;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var safe_allocator = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
+    defer _ = safe_allocator.deinit();
+    const allocator = safe_allocator.allocator();
 
     // Create DHCPDISCOVER
     const mac = [6]u8{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };

@@ -104,7 +104,7 @@ pub const Option = union(enum) {
 
 /// Collection of DHCP options.
 pub const Options = struct {
-    items: std.ArrayListUnmanaged(Option) = .empty,
+    items: std.ArrayList(Option) = .empty,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) Options {
@@ -125,7 +125,10 @@ pub const Options = struct {
     }
 
     /// Get an option by tag, returns the payload or null if not present.
-    pub fn get(self: *const Options, comptime tag: std.meta.Tag(Option)) ?@FieldType(Option, @tagName(tag)) {
+    pub fn get(
+        self: *const Options,
+        comptime tag: std.meta.Tag(Option),
+    ) ?@FieldType(Option, @tagName(tag)) {
         for (self.items.items) |item| {
             if (item == tag) {
                 return @field(item, @tagName(tag));
@@ -160,11 +163,11 @@ pub const Message = struct {
     /// Gateway IP address (relay agent).
     giaddr: Ipv4Addr = .{ 0, 0, 0, 0 },
     /// Client hardware address.
-    chaddr: [16]u8 = .{0} ** 16,
+    chaddr: [16]u8 = @splat(0),
     /// Server host name.
-    sname: [64]u8 = .{0} ** 64,
+    sname: [64]u8 = @splat(0),
     /// Boot file name.
-    file: [128]u8 = .{0} ** 128,
+    file: [128]u8 = @splat(0),
     options: Options,
 
     const HEADER_SIZE = 236;
@@ -208,8 +211,8 @@ pub const Message = struct {
             return error.BufferTooSmall;
         }
 
-        buf[0] = @intFromEnum(self.op);
-        buf[1] = @intFromEnum(self.htype);
+        buf[0] = @backingInt(self.op);
+        buf[1] = @backingInt(self.htype);
         buf[2] = self.hlen;
         buf[3] = self.hops;
         mem.writeInt(u32, buf[4..8], self.xid, .big);
@@ -236,7 +239,7 @@ pub const Message = struct {
         if (pos >= buf.len) {
             return error.BufferTooSmall;
         }
-        buf[pos] = @intFromEnum(OptionCode.end);
+        buf[pos] = @backingInt(OptionCode.end);
         pos += 1;
 
         return pos;
@@ -256,8 +259,8 @@ pub const Message = struct {
         var msg = Message.init(allocator);
         errdefer msg.deinit();
 
-        msg.op = @enumFromInt(data[0]);
-        msg.htype = @enumFromInt(data[1]);
+        msg.op = @fromBackingInt(data[0]);
+        msg.htype = @fromBackingInt(data[1]);
         msg.hlen = data[2];
         msg.hops = data[3];
         msg.xid = mem.readInt(u32, data[4..8], .big);
@@ -274,7 +277,7 @@ pub const Message = struct {
         // Parse options
         var pos: usize = 240;
         while (pos < data.len) {
-            const code: OptionCode = @enumFromInt(data[pos]);
+            const code: OptionCode = @fromBackingInt(data[pos]);
             pos += 1;
 
             if (code == .end) break;
@@ -301,21 +304,21 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
     switch (opt) {
         .message_type => |mt| {
             if (p + 3 > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.message_type);
+            buf[p] = @backingInt(OptionCode.message_type);
             buf[p + 1] = 1;
-            buf[p + 2] = @intFromEnum(mt);
+            buf[p + 2] = @backingInt(mt);
             p += 3;
         },
         .requested_ip_address => |addr| {
             if (p + 6 > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.requested_ip_address);
+            buf[p] = @backingInt(OptionCode.requested_ip_address);
             buf[p + 1] = 4;
             @memcpy(buf[p + 2 .. p + 6], &addr);
             p += 6;
         },
         .server_identifier => |addr| {
             if (p + 6 > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.server_identifier);
+            buf[p] = @backingInt(OptionCode.server_identifier);
             buf[p + 1] = 4;
             @memcpy(buf[p + 2 .. p + 6], &addr);
             p += 6;
@@ -323,23 +326,23 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
         .parameter_request_list => |list| {
             const len: u8 = @intCast(list.len);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.parameter_request_list);
+            buf[p] = @backingInt(OptionCode.parameter_request_list);
             buf[p + 1] = len;
             for (list, 0..) |code, i| {
-                buf[p + 2 + i] = @intFromEnum(code);
+                buf[p + 2 + i] = @backingInt(code);
             }
             p += 2 + len;
         },
         .max_message_size => |size| {
             if (p + 4 > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.max_message_size);
+            buf[p] = @backingInt(OptionCode.max_message_size);
             buf[p + 1] = 2;
             mem.writeInt(u16, buf[p + 2 .. p + 4][0..2], size, .big);
             p += 4;
         },
         .subnet_mask => |mask| {
             if (p + 6 > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.subnet_mask);
+            buf[p] = @backingInt(OptionCode.subnet_mask);
             buf[p + 1] = 4;
             @memcpy(buf[p + 2 .. p + 6], &mask);
             p += 6;
@@ -347,7 +350,7 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
         .router => |addrs| {
             const len: u8 = @intCast(addrs.len * 4);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.router);
+            buf[p] = @backingInt(OptionCode.router);
             buf[p + 1] = len;
             for (addrs, 0..) |addr, i| {
                 @memcpy(buf[p + 2 + i * 4 .. p + 2 + (i + 1) * 4], &addr);
@@ -357,7 +360,7 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
         .domain_name_server => |addrs| {
             const len: u8 = @intCast(addrs.len * 4);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.domain_name_server);
+            buf[p] = @backingInt(OptionCode.domain_name_server);
             buf[p + 1] = len;
             for (addrs, 0..) |addr, i| {
                 @memcpy(buf[p + 2 + i * 4 .. p + 2 + (i + 1) * 4], &addr);
@@ -367,7 +370,7 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
         .host_name => |name| {
             const len: u8 = @intCast(name.len);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.host_name);
+            buf[p] = @backingInt(OptionCode.host_name);
             buf[p + 1] = len;
             @memcpy(buf[p + 2 .. p + 2 + len], name);
             p += 2 + len;
@@ -375,7 +378,7 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
         .domain_name => |name| {
             const len: u8 = @intCast(name.len);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.domain_name);
+            buf[p] = @backingInt(OptionCode.domain_name);
             buf[p + 1] = len;
             @memcpy(buf[p + 2 .. p + 2 + len], name);
             p += 2 + len;
@@ -400,7 +403,7 @@ fn encodeOption(opt: Option, buf: []u8, pos: usize) !usize {
             }
             const len: u8 = @intCast(encoded_len);
             if (p + 2 + len > buf.len) return error.BufferTooSmall;
-            buf[p] = @intFromEnum(OptionCode.domain_search);
+            buf[p] = @backingInt(OptionCode.domain_search);
             buf[p + 1] = len;
             @memcpy(buf[p + 2 .. p + 2 + len], encoded[0..encoded_len]);
             p += 2 + len;
@@ -421,7 +424,7 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
     switch (code) {
         .message_type => {
             if (data.len < 1) return error.InvalidOptionLength;
-            return .{ .message_type = @enumFromInt(data[0]) };
+            return .{ .message_type = @fromBackingInt(data[0]) };
         },
         .subnet_mask => {
             if (data.len < 4) return error.InvalidOptionLength;
@@ -464,7 +467,7 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
         .parameter_request_list => {
             const list = try allocator.alloc(OptionCode, data.len);
             for (data, 0..) |byte, i| {
-                list[i] = @enumFromInt(byte);
+                list[i] = @fromBackingInt(byte);
             }
             return .{ .parameter_request_list = list };
         },
@@ -474,7 +477,7 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
         },
         .domain_search => {
             // RFC 1035 compressed domain name decoding
-            var names: std.ArrayListUnmanaged([]const u8) = .empty;
+            var names: std.ArrayList([]const u8) = .empty;
             errdefer {
                 for (names.items) |name| allocator.free(name);
                 names.deinit(allocator);
@@ -495,7 +498,10 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
                         name_len += 1;
                     }
                     if (name_len + label_len > name_buf.len) return error.DomainNameTooLong;
-                    @memcpy(name_buf[name_len .. name_len + label_len], data[pos .. pos + label_len]);
+                    @memcpy(
+                        name_buf[name_len .. name_len + label_len],
+                        data[pos .. pos + label_len],
+                    );
                     name_len += label_len;
                     pos += label_len;
                 }
@@ -511,7 +517,7 @@ fn decodeOption(allocator: Allocator, code: OptionCode, data: []const u8) !Optio
         },
         else => {
             const dup = try allocator.dupe(u8, data);
-            return .{ .unknown = .{ .code = @intFromEnum(code), .data = dup } };
+            return .{ .unknown = .{ .code = @backingInt(code), .data = dup } };
         },
     }
 }
@@ -598,14 +604,18 @@ test "encode and decode DHCPREQUEST" {
 
     try std.testing.expectEqual(@as(u32, 0xABCDEF01), decoded.xid);
     try std.testing.expectEqual(MessageType.request, decoded.options.getMessageType().?);
-    try std.testing.expectEqualSlices(u8, &requested_ip, &decoded.options.get(.requested_ip_address).?);
+    try std.testing.expectEqualSlices(
+        u8,
+        &requested_ip,
+        &decoded.options.get(.requested_ip_address).?,
+    );
     try std.testing.expectEqualSlices(u8, &server_id, &decoded.options.get(.server_identifier).?);
 }
 
 test "decode DHCP response with options" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2; // BOOTREPLY
     buf[1] = 1; // Ethernet
     buf[2] = 6; // MAC len
@@ -658,7 +668,11 @@ test "decode DHCP response with options" {
     try std.testing.expectEqual(@as(u32, 0x12345678), msg.xid);
     try std.testing.expectEqualSlices(u8, &[4]u8{ 192, 168, 1, 100 }, &msg.yiaddr);
     try std.testing.expectEqual(MessageType.ack, msg.options.getMessageType().?);
-    try std.testing.expectEqualSlices(u8, &[4]u8{ 255, 255, 255, 0 }, &msg.options.get(.subnet_mask).?);
+    try std.testing.expectEqualSlices(
+        u8,
+        &[4]u8{ 255, 255, 255, 0 },
+        &msg.options.get(.subnet_mask).?,
+    );
 
     const routers = msg.options.get(.router).?;
     try std.testing.expectEqual(@as(usize, 1), routers.len);
@@ -701,13 +715,13 @@ test "domain search encode and decode" {
 
 test "decode error: packet too short" {
     const allocator = std.testing.allocator;
-    const short_packet = [_]u8{0} ** 100;
+    const short_packet: [100]u8 = @splat(0);
     try std.testing.expectError(error.PacketTooShort, Message.decode(allocator, &short_packet));
 }
 
 test "decode error: invalid magic cookie" {
     const allocator = std.testing.allocator;
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 1; // BOOTREQUEST
     buf[1] = 1; // Ethernet
     buf[2] = 6;
@@ -723,7 +737,7 @@ test "decode error: invalid magic cookie" {
 
 test "decode error: truncated option" {
     const allocator = std.testing.allocator;
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
@@ -749,7 +763,7 @@ test "encode error: buffer too small" {
 test "decode multiple routers and DNS servers" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
@@ -806,7 +820,7 @@ test "decode multiple routers and DNS servers" {
 test "decode unknown option passthrough" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
@@ -834,7 +848,7 @@ test "decode unknown option passthrough" {
 test "decode with pad options" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
@@ -864,7 +878,7 @@ test "decode with pad options" {
 test "domain name option" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
@@ -888,7 +902,7 @@ test "domain name option" {
 test "host name option" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
@@ -912,7 +926,7 @@ test "minimum valid packet" {
     const allocator = std.testing.allocator;
 
     // Minimum: 236 byte header + 4 byte magic cookie + 1 byte end option
-    var buf: [241]u8 = .{0} ** 241;
+    var buf: [241]u8 = @splat(0);
     buf[0] = 1; // BOOTREQUEST
     buf[1] = 1; // Ethernet
     buf[2] = 6;
@@ -929,7 +943,7 @@ test "minimum valid packet" {
 test "max message size option" {
     const allocator = std.testing.allocator;
 
-    var buf: [300]u8 = .{0} ** 300;
+    var buf: [300]u8 = @splat(0);
     buf[0] = 2;
     buf[1] = 1;
     buf[2] = 6;
